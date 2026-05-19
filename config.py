@@ -74,5 +74,5 @@ WEATHER_CN = {
     "Cold": "寒冷", "Fair": "晴好",
 }
 
-# 预报天数（1-7天）
-FORECAST_DAYS = 3
+# 预报天数（NWS 最多 7 天）
+FORECAST_DAYS = 7

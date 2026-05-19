@@ -21,6 +21,16 @@ WEEKDAY_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 DAY_NAME_MAP = {
     "Today": "今天", "Tonight": "今晚",
     "Overnight": "今夜",
+    "Memorial Day": "阵亡将士纪念日",
+    "Independence Day": "独立日",
+    "Labor Day": "劳动节",
+    "Thanksgiving Day": "感恩节",
+    "Christmas Day": "圣诞节",
+    "New Year's Day": "元旦",
+    "Martin Luther King Jr Day": "马丁路德金纪念日",
+    "Presidents' Day": "总统日",
+    "Veterans Day": "退伍军人节",
+    "Columbus Day": "哥伦布日",
 }
 
 
