@@ -5,7 +5,7 @@ import time
 import requests
 from email.mime.text import MIMEText
 from datetime import datetime, timezone, timedelta
-from config import REGIONS, WEATHER_CN, FORECAST_DAYS
+from config import REGIONS, WEATHER_CN, FORECAST_DAYS, ALERT_CN, SEVERITY_CN
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -129,9 +129,16 @@ def get_alerts(state_code):
             props = f.get("properties", {})
             event = props.get("event", "")
             severity = props.get("severity", "")
+            headline = props.get("headline", "")
             if event:
-                alerts.append({"event": event, "severity": severity})
-        return alerts[:3]
+                event_cn = ALERT_CN.get(event, event)
+                alerts.append({
+                    "event": event,
+                    "event_cn": event_cn,
+                    "severity": severity,
+                    "headline": headline,
+                })
+        return alerts
     except Exception:
         return []
 
@@ -155,13 +162,30 @@ def format_region_weather(region_name, region_data):
             wind = translate_wind(p.get("windSpeed", ""))
             lines.append(f"    {translate_day(name)}: {desc} {temp_c}°C {wind}")
         lines.append("")
-    alerts = get_alerts(region_data["states"][0])
-    if alerts:
-        lines.append(f"  !! 预警({region_data['states'][0]}):")
-        sev_map = {"Extreme": "极端", "Severe": "严重", "Moderate": "中等", "Minor": "轻微"}
-        for a in alerts:
-            sv = sev_map.get(a["severity"], a["severity"])
-            lines.append(f"    [{sv}] {a['event']}")
+    # 扫描该区域所有州的预警
+    all_region_alerts = []
+    for st in region_data["states"]:
+        st_alerts = get_alerts(st)
+        for a in st_alerts:
+            a["state"] = st
+            all_region_alerts.append(a)
+
+    # 去重 + 只显示中等以上
+    seen = set()
+    shown = []
+    sev_order = {"Extreme": 0, "Severe": 1, "Moderate": 2, "Minor": 3, "Unknown": 4}
+    for a in sorted(all_region_alerts, key=lambda x: sev_order.get(x["severity"], 4)):
+        key = a["event"] + a["state"]
+        if key not in seen and sev_order.get(a["severity"], 4) <= 2:
+            seen.add(key)
+            shown.append(a)
+
+    if shown:
+        lines.append(f"  == 天气预警 ==")
+        for a in shown[:6]:
+            sv_cn = SEVERITY_CN.get(a["severity"], a["severity"])
+            marker = ">>>" if a["severity"] in ("Extreme", "Severe") else ">"
+            lines.append(f"    {marker} [{sv_cn}] {a['event_cn']} ({a['state']})")
         lines.append("")
     return "\n".join(lines)
 

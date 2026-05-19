@@ -74,5 +74,67 @@ WEATHER_CN = {
     "Cold": "寒冷", "Fair": "晴好",
 }
 
+# NWS 预警类型英文 → 中文
+ALERT_CN = {
+    "Tornado Warning": "龙卷风警告",
+    "Tornado Watch": "龙卷风警戒",
+    "Severe Thunderstorm Warning": "强雷暴警告",
+    "Severe Thunderstorm Watch": "强雷暴警戒",
+    "Flash Flood Warning": "山洪警告",
+    "Flash Flood Watch": "山洪警戒",
+    "Flood Warning": "洪水警告",
+    "Flood Watch": "洪水警戒",
+    "Flood Advisory": "洪水预警",
+    "Hurricane Warning": "飓风警告",
+    "Hurricane Watch": "飓风警戒",
+    "Tropical Storm Warning": "热带风暴警告",
+    "Tropical Storm Watch": "热带风暴警戒",
+    "Winter Storm Warning": "冬季风暴警告",
+    "Winter Storm Watch": "冬季风暴警戒",
+    "Blizzard Warning": "暴风雪警告",
+    "Ice Storm Warning": "冰暴警告",
+    "Heavy Snow Warning": "大雪警告",
+    "Freeze Warning": "霜冻警告",
+    "Frost Advisory": "霜冻预警",
+    "Wind Chill Warning": "寒潮警告",
+    "Wind Chill Advisory": "寒潮预警",
+    "Heat Advisory": "高温预警",
+    "Excessive Heat Warning": "极端高温警告",
+    "Excessive Heat Watch": "极端高温警戒",
+    "Red Flag Warning": "火灾危险警告",
+    "Fire Weather Watch": "火灾天气警戒",
+    "High Wind Warning": "大风警告",
+    "Wind Advisory": "大风预警",
+    "Dense Fog Advisory": "浓雾预警",
+    "Dust Storm Warning": "沙尘暴警告",
+    "Severe Weather Statement": "恶劣天气通报",
+    "Special Weather Statement": "特殊天气通报",
+    "Coastal Flood Advisory": "沿海洪水预警",
+    "Coastal Flood Warning": "沿海洪水警告",
+    "Rip Current Statement": "离岸流预警",
+    "Air Quality Alert": "空气质量预警",
+    "Hard Freeze Warning": "严重霜冻警告",
+    "Freeze Watch": "霜冻警戒",
+}
+
+# 预警严重等级中文
+SEVERITY_CN = {
+    "Extreme": "极端",
+    "Severe": "严重",
+    "Moderate": "中等",
+    "Minor": "轻微",
+    "Unknown": "未知",
+}
+
+# 只推送 Moderate 及以上级别的预警
+MIN_SEVERITY = "Moderate"
+
 # 预报天数（NWS 最多 7 天）
 FORECAST_DAYS = 7
+
+# 所有涉及州（用于全局极端天气扫描）
+ALL_STATES = []
+for _r in REGIONS.values():
+    for _s in _r["states"]:
+        if _s not in ALL_STATES:
+            ALL_STATES.append(_s)
