@@ -14,13 +14,11 @@ import requests
 from datetime import datetime
 import os
 
-ET = datetime.now().strftime('%Z')
-
 def get_noaa_outlook():
     """抓取 NOAA 温度展望，专注极寒极热预警"""
     results = []
     results.append("🌡️ NOAA 美国温度极端预警")
-    results.append(f"生成时间: {datetime.now(ET).strftime('%Y-%m-%d %H:%M')} ET")
+    results.append(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M %Z')}")
     results.append("=" * 50)
     results.append("")
 
