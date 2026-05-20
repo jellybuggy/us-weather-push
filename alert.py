@@ -221,6 +221,6 @@ if __name__ == "__main__":
     if message:
         print(message)
         date_str = datetime.now(ET).strftime("%m/%d %H:%M")
-        push_email(message, f"!!! 极端天气预警 - {date_str}")
+        push_email(message, "！！美国极端天气预警！！")
     else:
         print("平安无事，不推送。")
