@@ -224,7 +224,7 @@ def push_email(message):
         print("邮件推送: 未配置完整，跳过")
         return False
 
-    title = f"US Weather - {datetime.now(ET).strftime('%m/%d')}"
+  title = "今日美国各地天气"
     msg = MIMEText(message, "plain", "utf-8")
     msg["Subject"] = title
     msg["From"] = sender
