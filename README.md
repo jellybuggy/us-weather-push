@@ -1,21 +1,57 @@
-# 美国天气预报 - 每日自动邮件推送
+# 50-Day Winter Replenishment Alert System
 
-每天自动获取美国 8 大区域 16 个城市的天气预报和恶劣天气预警，推送到你的邮箱。
+基于官方天气趋势、NWS短期预警、CPC中长期趋势和市场新闻信号，提前50天辅助 Outdoor Faucet Cover 的生产、海运、FBA补货和Amazon广告决策。
+
+## 系统架构
+
+本系统包含两个模块，同时运行：
+
+### Module 1: Daily Weather Forecast
+每日天气预报推送
+- 美国重点州/城市的 7 天天气预报
+- 最低温度 / 最高温度
+- 是否接近或低于 32°F（冰点）
+- 降雪、冰冻、暴风雪、寒潮等天气信号
+- NWS Active Alerts 实时预警
+- 数据来源: NWS API (api.weather.gov)
+
+### Module 2: 50-Day Winter Replenishment Alert
+冬季补货决策辅助系统
+- Executive Summary - 冬季补货风险等级
+- 50-Day Replenishment Risk - 长期趋势判断
+- 45-Day Shipping Decision - 海运/FBA发货提醒
+- 30-Day Market Watch - 新闻和市场信号监测
+- 14-Day Weather Risk - NOAA CPC 展望
+- 7-Day Official Alerts - NWS 活跃预警
+- 7-Day Daily Weather Forecast - 各城市 7 天预报
+- Suggested Amazon Actions - Amazon 操作建议
+
+## 极寒/极热阈值
+
+- **极寒**：< 14°F（-10°C）→ 水龙头保护罩需求暴涨
+- **极热**：> 90°F（32°C）→ 水龙头保护罩（防晒）+ 通风口导流罩（冷气）需求上升
 
 ## 覆盖区域
 
 | 区域 | 城市 | 州 |
 |------|------|-----|
-| 东北部 | 纽约、波士顿 | NY, MA, PA, NJ, CT |
-| 东南部 | 迈阿密、亚特兰大 | FL, GA, SC, NC |
-| 南部 | 休斯顿、新奥尔良 | TX, LA, MS, AL |
-| 中部 | 芝加哥、堪萨斯城 | IL, MO, KS, IA, NE |
-| 西部 | 洛杉矶、旧金山 | CA, OR, WA |
-| 西南部 | 凤凰城、拉斯维加斯 | AZ, NM, NV |
-| 西北部 | 西雅图、波特兰 | WA, OR, ID, MT |
-| 中西部山地 | 丹佛、盐湖城 | CO, UT, WY |
+| 东北部 | 纽约、波士顿、水牛城、费城 | NY, MA, PA |
+| 中西部 | 芝加哥、底特律、明尼阿波利斯 | IL, MI, MN |
+| 山区 | 丹佛、盐湖城 | CO, UT |
+| 西北部 | 西雅图、波特兰 | WA, OR |
+| 西部 | 洛杉矶 | CA |
+| 西南部 | 凤凰城、拉斯维加斯 | AZ, NV |
+| 东南部 | 亚特兰大、迈阿密 | GA, FL |
+| 南部 | 休斯顿、达拉斯 | TX |
 
-数据来源：美国国家气象局（NWS），完全免费，无需 API Key。
+## 硬性规则
+
+- ❌ 不允许编造 30 天、50 天、90 天具体温度
+- ❌ 不允许编造极寒概率
+- ⚠️ CPC 长期数据只能表达 below normal / near normal / above normal 趋势
+- ⚠️ 新闻/RSS 只能作为 media signal / market signal，不能作为官方预警
+- ✅ 每个结论必须注明来源
+- ✅ 没有可靠数据时写"暂无可靠数据"
 
 ## 3 步开始使用
 
@@ -47,74 +83,11 @@
 | `EMAIL_PASSWORD` | 第 2 步获取的授权码 | `abcdefghijklmnop` |
 | `EMAIL_RECEIVER` | 接收邮件的邮箱 | `123456789@qq.com` |
 
-> 发件和收件可以是同一个邮箱，自己发给自己。
-
 ### 完成！
 
-现在有两种方式触发：
+- **自动**：每天北京时间 7:30 自动推送（Module 1 + Module 2）
+- **手动**：仓库页面 → **Actions** → **50-Day Winter Replenishment Alert System** → **Run workflow**
 
-- **自动**：每天北京时间 7:30 自动推送
-- **手动**：仓库页面 → **Actions** → **US Weather Push** → **Run workflow** → 立即推送
+## 邮件结构说明
 
-## 推送效果
-
-邮件内容示例：
-
-```
-📍 东北部
-   州: NY, MA, PA, NJ, CT
-
-  纽约(New York)
-    今天: 晴天 32°C 13~24km/h 3~4级
-    今晚: 局部多云 23°C 19~24km/h 3~4级
-    星期三: 晴天 31°C 16~26km/h 3~4级
-    星期三晚: 雷暴 16°C 19~24km/h 3~4级
-    星期四: 晴天 18°C 11~21km/h 2~4级
-    星期四晚: 多云 13°C 3~13km/h 1~3级
-
-  !! 预警(NY):
-    [中等] Heat Advisory
-```
-
-## 修改推送时间
-
-编辑 `.github/workflows/weather-push.yml`，修改 cron 表达式：
-
-```yaml
-schedule:
-  - cron: '30 23 * * *'  # 北京时间 7:30
-```
-
-换算：北京时间 = UTC + 8，所以北京时间 8:00 = UTC 0:00 = `0 0 * * *`
-
-## 自定义城市
-
-编辑 `config.py`，可以增删区域和城市：
-
-```python
-REGIONS = {
-    "你想叫的名字": {
-        "states": ["CA"],
-        "cities": [
-            {"name": "洛杉矶", "en": "Los Angeles", "lat": 34.0522, "lon": -118.2437},
-        ],
-    },
-}
-```
-
-## 其他推送方式
-
-除了邮件，还支持企业微信、飞书、钉钉。在 Secrets 里对应添加即可：
-
-| 方式 | Secret 名 | 获取方式 |
-|------|-----------|----------|
-| 企业微信 | `WECOM_WEBHOOK` | 群机器人 Webhook 地址 |
-| 飞书 | `FEISHU_WEBHOOK` | 群机器人 Webhook 地址 |
-| 钉钉 | `DINGTALK_WEBHOOK` | 群机器人 Webhook 地址 |
-
-## 费用
-
-全部免费：
-- NWS 天气 API：免费，无需 Key
-- GitHub Actions：免费额度（每月 2000 分钟）
-- QQ 邮箱 SMTP：免费
+### Module 1: Daily Weather Forecast 邮件标题
