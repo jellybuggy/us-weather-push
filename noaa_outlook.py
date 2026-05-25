@@ -72,6 +72,45 @@ def celsius(f):
     return round((f - 32) * 5 / 9)
 
 
+def format_temp_period(city_data, period_key):
+    """格式化城市温度峰值发生的具体时间段信息"""
+    p = city_data.get(period_key)
+    is_heat = period_key == "peak_heat_period"
+    temp_f = city_data.get("max_f" if is_heat else "min_f")
+    temp_c = city_data.get("max_c" if is_heat else "min_c")
+
+    if not p:
+        temp_f_str = f"{temp_f}°F" if temp_f is not None else "N/A"
+        temp_c_str = f"{temp_c}°C" if temp_c is not None else "N/A"
+        label = "最高温" if is_heat else "最低温"
+        return f"{city_data['name']}, {city_data['state']}: {label} {temp_f_str} / {temp_c_str} — 暂无官方时间"
+
+    name = p.get("name", "")
+    temp = p.get("temperature")
+    unit = p.get("temperatureUnit", "F")
+    start = p.get("startTime", "")[:16] if p.get("startTime") else "暂无官方时间"
+    end = p.get("endTime", "")[:16] if p.get("endTime") else "暂无官方时间"
+    forecast = p.get("shortForecast", "")
+
+    temp_c_calc = celsius(temp) if temp is not None else "N/A"
+    temp_str = f"{temp}°{unit}" if temp is not None else "N/A"
+    temp_c_str = f"{temp_c_calc}°C" if temp_c_calc != "N/A" else ""
+
+    lines = []
+    lines.append(f"{city_data['name']}, {city_data['state']}")
+    if is_heat:
+        lines.append(f"  最高温: {temp_str} / {temp_c_str}")
+    else:
+        lines.append(f"  最低温: {temp_str} / {temp_c_str}")
+    lines.append(f"  预报时段: {name if name else '暂无官方时间'}")
+    lines.append(f"  开始时间: {start}")
+    lines.append(f"  结束时间: {end}")
+    if forecast:
+        lines.append(f"  天气状况: {forecast}")
+    lines.append(f"  来源: NWS 7-Day Forecast")
+    return "\n".join(lines)
+
+
 def get_nws_point(lat, lon):
     """获取 NWS 网格点"""
     url = f"https://api.weather.gov/points/{lat},{lon}"
@@ -149,6 +188,32 @@ def get_city_7day_data(city):
     min_temp_c = celsius(min_temp_f)
     max_temp_c = celsius(max_temp_f)
 
+    # 找出最低/最高温对应的 period（用于显示具体时间）
+    def make_period_summary(p):
+        if not p:
+            return None
+        return {
+            "name": p.get("name", ""),
+            "temperature": p.get("temperature"),
+            "temperatureUnit": p.get("temperatureUnit", "F"),
+            "startTime": p.get("startTime", ""),
+            "endTime": p.get("endTime", ""),
+            "shortForecast": p.get("shortForecast", ""),
+        }
+
+    peak_heat_period = None
+    peak_cold_period = None
+    if max_temp_f is not None:
+        for p in periods:
+            if p.get("temperature") == max_temp_f:
+                peak_heat_period = make_period_summary(p)
+                break
+    if min_temp_f is not None:
+        for p in periods:
+            if p.get("temperature") == min_temp_f:
+                peak_cold_period = make_period_summary(p)
+                break
+
     # --- Outdoor Faucet Cover 风险等级 ---
     # 14°F = -10°C: 核心补货预警 | 23°F = -5°C: 中等风险 | 32°F = 0°C: 低温关注
     faucet_risk = "none"
@@ -185,6 +250,8 @@ def get_city_7day_data(city):
         "faucet_risk": faucet_risk,
         "vent_heat": vent_heat,
         "vent_cold": vent_cold_tier,
+        "peak_heat_period": peak_heat_period,
+        "peak_cold_period": peak_cold_period,
     }
 
 
@@ -239,13 +306,21 @@ def build_executive_summary(all_city_data, alerts):
     lines.append(f"  风险等级: {faucet_level}")
     lines.append(f"  说明: {faucet_desc}")
     if faucet_critical:
-        lines.append(f"  Critical 城市(≤5°F/-15°C): {', '.join([c['name'] for c in faucet_critical])}")
+        lines.append("  Critical 城市(≤5°F/-15°C):")
+        for c in faucet_critical:
+            lines.append(format_temp_period(c, "peak_cold_period"))
     if faucet_high:
-        lines.append(f"  高风险城市(≤14°F/-10°C): {', '.join([c['name'] for c in faucet_high])}")
+        lines.append("  高风险城市(≤14°F/-10°C):")
+        for c in faucet_high:
+            lines.append(format_temp_period(c, "peak_cold_period"))
     if faucet_moderate:
-        lines.append(f"  中等风险城市(≤23°F/-5°C): {', '.join([c['name'] for c in faucet_moderate])}")
+        lines.append("  中等风险城市(≤23°F/-5°C):")
+        for c in faucet_moderate:
+            lines.append(format_temp_period(c, "peak_cold_period"))
     if faucet_watch:
-        lines.append(f"  低温关注城市(≤32°F/0°C): {', '.join([c['name'] for c in faucet_watch])}")
+        lines.append("  低温关注城市(≤32°F/0°C):")
+        for c in faucet_watch:
+            lines.append(format_temp_period(c, "peak_cold_period"))
     if faucet_severe:
         lines.append(f"  严重/极端冻害预警: {len(faucet_severe)} 条")
     if not any([faucet_critical, faucet_high, faucet_moderate, faucet_watch, faucet_severe]):
@@ -284,11 +359,17 @@ def build_executive_summary(all_city_data, alerts):
     lines.append(f"  需求等级: {vent_level}")
     lines.append(f"  说明: {vent_desc}")
     if vent_heat_cities:
-        lines.append(f"  🔥 高温城市(≥90°F/32°C): {', '.join([c['name'] for c in vent_heat_cities])}")
+        lines.append("  🔥 高温城市(≥90°F/32°C):")
+        for c in vent_heat_cities:
+            lines.append(format_temp_period(c, "peak_heat_period"))
     if vent_cold_strong:
-        lines.append(f"  ❄️ 强采暖城市(≤32°F/0°C): {', '.join([c['name'] for c in vent_cold_strong])}")
+        lines.append("  ❄️ 强采暖城市(≤32°F/0°C):")
+        for c in vent_cold_strong:
+            lines.append(format_temp_period(c, "peak_cold_period"))
     if vent_cold_watch:
-        lines.append(f"  ⚠️ 采暖 Watch 城市(≤45°F/7°C): {', '.join([c['name'] for c in vent_cold_watch])}")
+        lines.append("  ⚠️ 采暖 Watch 城市(≤45°F/7°C):")
+        for c in vent_cold_watch:
+            lines.append(format_temp_period(c, "peak_cold_period"))
     if vent_heat_alerts:
         lines.append(f"  高温预警: {len(vent_heat_alerts)} 条")
     if vent_cold_alerts:
@@ -454,25 +535,25 @@ def build_faucet_cover_risk(all_city_data, alerts):
     if faucet_cities_critical:
         lines.append("🚨 CRITICAL – 爆单风险城市:")
         for c in faucet_cities_critical:
-            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+            lines.append(format_temp_period(c, "peak_cold_period"))
         lines.append("")
 
     if faucet_cities_high:
         lines.append("🔴 HIGH – 核心补货风险城市:")
         for c in faucet_cities_high:
-            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+            lines.append(format_temp_period(c, "peak_cold_period"))
         lines.append("")
 
     if faucet_cities_moderate:
         lines.append("🟡 MODERATE – 中等风险城市:")
         for c in faucet_cities_moderate:
-            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+            lines.append(format_temp_period(c, "peak_cold_period"))
         lines.append("")
 
     if faucet_cities_watch:
         lines.append("🟢 WATCH – 低温关注城市:")
         for c in faucet_cities_watch:
-            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+            lines.append(format_temp_period(c, "peak_cold_period"))
         lines.append("")
 
     if faucet_alerts:
@@ -514,19 +595,19 @@ def build_vent_deflector_signal(all_city_data, alerts):
     if vent_heat_cities:
         lines.append("🔥 高温需求城市 (≥90°F/32°C) – 冷气市场:")
         for c in vent_heat_cities:
-            lines.append(f"  • {c['name']}({c['state']}): 最高 {c['max_f']}°F ({c['max_c']}°C)")
+            lines.append(format_temp_period(c, "peak_heat_period"))
         lines.append("")
 
     if vent_cold_strong:
         lines.append("❄️ 强采暖需求城市 (≤32°F/0°C):")
         for c in vent_cold_strong:
-            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+            lines.append(format_temp_period(c, "peak_cold_period"))
         lines.append("")
 
     if vent_cold_watch:
         lines.append("⚠️ 采暖 Watch 城市 (≤45°F/7°C):")
         for c in vent_cold_watch:
-            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+            lines.append(format_temp_period(c, "peak_cold_period"))
         lines.append("")
 
     if not vent_heat_cities and not vent_cold_strong and not vent_cold_watch:
@@ -688,22 +769,46 @@ def build_7day_forecast(all_city_data):
     lines.append("-" * 40)
     lines.append("📊 Outdoor Faucet Cover 温度风险汇总:")
     if faucet_critical_cities:
-        lines.append(f"  ❄️ Critical (≤5°F/-15°C): {', '.join(faucet_critical_cities)}")
+        lines.append("  ❄️ Critical (≤5°F/-15°C):")
+        for name in faucet_critical_cities:
+            city = next((c for c in all_city_data if c["name"] == name), None)
+            if city:
+                lines.append(format_temp_period(city, "peak_cold_period"))
     if faucet_high_cities:
-        lines.append(f"  ❄️ HIGH (≤14°F/-10°C): {', '.join(faucet_high_cities)}")
+        lines.append("  ❄️ HIGH (≤14°F/-10°C):")
+        for name in faucet_high_cities:
+            city = next((c for c in all_city_data if c["name"] == name), None)
+            if city:
+                lines.append(format_temp_period(city, "peak_cold_period"))
     if faucet_watch_cities:
-        lines.append(f"  ⚠️ Watch (≤32°F/0°C): {', '.join(faucet_watch_cities)}")
+        lines.append("  ⚠️ Watch (≤32°F/0°C):")
+        for name in faucet_watch_cities:
+            city = next((c for c in all_city_data if c["name"] == name), None)
+            if city:
+                lines.append(format_temp_period(city, "peak_cold_period"))
     if not faucet_critical_cities and not faucet_high_cities and not faucet_watch_cities:
         lines.append("  🟢 暂无冰冻风险城市")
 
     lines.append("")
     lines.append("📊 Air Vent Deflector HVAC 需求汇总:")
     if vent_heat_cities:
-        lines.append(f"  🔥 高温需求 (≥90°F/32°C): {', '.join(vent_heat_cities)}")
+        lines.append("  🔥 高温需求 (≥90°F/32°C):")
+        for name in vent_heat_cities:
+            city = next((c for c in all_city_data if c["name"] == name), None)
+            if city:
+                lines.append(format_temp_period(city, "peak_heat_period"))
     if vent_cold_strong_cities:
-        lines.append(f"  ❄️ 强采暖需求 (≤32°F/0°C): {', '.join(vent_cold_strong_cities)}")
+        lines.append("  ❄️ 强采暖需求 (≤32°F/0°C):")
+        for name in vent_cold_strong_cities:
+            city = next((c for c in all_city_data if c["name"] == name), None)
+            if city:
+                lines.append(format_temp_period(city, "peak_cold_period"))
     if vent_cold_watch_cities:
-        lines.append(f"  ⚠️ 采暖 Watch (≤45°F/7°C): {', '.join(vent_cold_watch_cities)}")
+        lines.append("  ⚠️ 采暖 Watch (≤45°F/7°C):")
+        for name in vent_cold_watch_cities:
+            city = next((c for c in all_city_data if c["name"] == name), None)
+            if city:
+                lines.append(format_temp_period(city, "peak_cold_period"))
     if not vent_heat_cities and not vent_cold_strong_cities and not vent_cold_watch_cities:
         lines.append("  🟢 暂无强烈 HVAC 需求城市")
 
