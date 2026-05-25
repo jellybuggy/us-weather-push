@@ -96,7 +96,10 @@ def get_all_alerts():
                 area = props.get("areaDesc", "")
                 headline = props.get("headline", "")
                 description = props.get("description", "")
+                effective_str = props.get("effective", "")
+                onset_str = props.get("onset", "")
                 expires_str = props.get("expires", "")
+                ends_str = props.get("ends", "")
 
                 # 过滤已过期的预警
                 if expires_str:
@@ -123,7 +126,10 @@ def get_all_alerts():
                     "area": area,
                     "headline": headline,
                     "description": description[:200],
+                    "effective": effective_str[:16] if effective_str else "",
+                    "onset": onset_str[:16] if onset_str else "",
                     "expires": expires_str[:16] if expires_str else "",
+                    "ends": ends_str[:16] if ends_str else "",
                 })
         except Exception as e:
             print(f"  {state}: 获取失败 - {e}")
@@ -164,13 +170,26 @@ def build_alert_message(alerts):
 
         for a in region_alerts:
             marker = "!!!" if a["severity"] == "Extreme" else "!!"
-            lines.append(f"  {marker} [{a['severity_cn']}] {a['event_cn']}")
-            lines.append(f"     类型: {a['event_cn']}（{a['event']}）")
-            lines.append(f"     区域: {translate_area(a['area'])}")
-            if a["headline"]:
-                lines.append(f"     概要: {translate_headline(a['headline'])}")
-            if a["expires"]:
-                lines.append(f"     到期: {a['expires']}")
+            lines.append(f"  {marker} [{a['severity_cn']}] {a['event_cn']} ({a['state']})")
+            lines.append("")
+
+        # Alert Details
+        lines.append("  == Alert Details ==")
+        for a in region_alerts:
+            effective_str = a.get("effective") or "暂无官方时间"
+            onset_str = a.get("onset") or "暂无官方时间"
+            expires_str = a.get("expires") or "暂无官方时间"
+            ends_str = a.get("ends") or "暂无官方时间"
+            lines.append(f"    • 预警类型: {a['event_cn']} ({a['event']})")
+            lines.append(f"      影响地区: {translate_area(a['area'])}")
+            lines.append(f"      严重等级: {a['severity_cn']}")
+            lines.append(f"      生效时间: {effective_str}")
+            lines.append(f"      开始时间: {onset_str}")
+            lines.append(f"      到期时间: {expires_str}")
+            lines.append(f"      结束时间: {ends_str}")
+            if a.get("headline"):
+                lines.append(f"      官方标题: {translate_headline(a['headline'])}")
+            lines.append(f"      来源: NWS API")
             lines.append("")
 
     lines.append("=" * 50)

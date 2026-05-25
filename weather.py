@@ -130,6 +130,11 @@ def get_alerts(state_code):
             event = props.get("event", "")
             severity = props.get("severity", "")
             headline = props.get("headline", "")
+            area = props.get("areaDesc", "")
+            effective = props.get("effective", "")
+            onset = props.get("onset", "")
+            expires = props.get("expires", "")
+            ends = props.get("ends", "")
             if event:
                 event_cn = ALERT_CN.get(event, event)
                 alerts.append({
@@ -137,6 +142,11 @@ def get_alerts(state_code):
                     "event_cn": event_cn,
                     "severity": severity,
                     "headline": headline,
+                    "area": area,
+                    "effective": effective,
+                    "onset": onset,
+                    "expires": expires,
+                    "ends": ends,
                 })
         return alerts
     except Exception:
@@ -187,6 +197,26 @@ def format_region_weather(region_name, region_data):
             marker = ">>>" if a["severity"] in ("Extreme", "Severe") else ">"
             lines.append(f"    {marker} [{sv_cn}] {a['event_cn']} ({a['state']})")
         lines.append("")
+
+        # Alert Details
+        lines.append("  == Alert Details ==")
+        for a in shown:
+            effective_str = a.get("effective", "")[:16] if a.get("effective") else "暂无官方时间"
+            onset_str = a.get("onset", "")[:16] if a.get("onset") else "暂无官方时间"
+            expires_str = a.get("expires", "")[:16] if a.get("expires") else "暂无官方时间"
+            ends_str = a.get("ends", "")[:16] if a.get("ends") else "暂无官方时间"
+            sv_cn = SEVERITY_CN.get(a["severity"], a["severity"])
+            lines.append(f"    • 预警类型: {a['event_cn']} ({a['event']})")
+            lines.append(f"      影响地区: {a.get('area', a['state'])}")
+            lines.append(f"      严重等级: {sv_cn}")
+            lines.append(f"      生效时间: {effective_str}")
+            lines.append(f"      开始时间: {onset_str}")
+            lines.append(f"      到期时间: {expires_str}")
+            lines.append(f"      结束时间: {ends_str}")
+            if a.get("headline"):
+                lines.append(f"      官方标题: {a['headline']}")
+            lines.append(f"      来源: NWS API")
+            lines.append("")
     return "\n".join(lines)
 
 
