@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-50-Day Winter Replenishment Alert System
+Dual-Product Weather & Replenishment Alert System
 
-Module 2: 50-Day Winter Replenishment Alert
-用于户外水龙头保暖罩的补货决策。
+产品线 1: Outdoor Faucet Cover — 冬季户外水龙头保暖罩
+产品线 2: Air Vent Deflector — 空调/暖气温控通风导流罩
 
 目标：
 基于官方中长期趋势、NWS短期预警、CPC outlook、新闻和市场信号，
@@ -16,6 +16,8 @@ Module 2: 50-Day Winter Replenishment Alert
 - 新闻/RSS只能作为 media signal / market signal，不能作为官方预警
 - 每个结论必须注明来源
 - 没有可靠数据时写"暂无可靠数据"
+- 高温预警仅适用于 Air Vent Deflector，不适用于 Faucet Cover
+- Faucet Cover 核心高风险阈值: ≤14°F / -10°C
 """
 
 import requests
@@ -25,7 +27,7 @@ import time
 import re
 
 # ==================== 常量 ====================
-SYSTEM_NAME = "50-Day Winter Replenishment Alert System"
+SYSTEM_NAME = "Dual-Product Weather & Replenishment Alert System"
 
 # 极寒/极热阈值（摄氏）
 COLD_THRESHOLD_C = -10
@@ -144,6 +146,32 @@ def get_city_7day_data(city):
     temps = [p.get("temperature") for p in periods if p.get("temperature") is not None]
     min_temp_f = min(temps) if temps else None
     max_temp_f = max(temps) if temps else None
+    min_temp_c = celsius(min_temp_f)
+    max_temp_c = celsius(max_temp_f)
+
+    # --- Outdoor Faucet Cover 风险等级 ---
+    # 14°F = -10°C: 核心补货预警 | 23°F = -5°C: 中等风险 | 32°F = 0°C: 低温关注
+    faucet_risk = "none"
+    if min_temp_f is not None:
+        if min_temp_f <= 5:       # ≤5°F / -15°C → Critical
+            faucet_risk = "critical"
+        elif min_temp_f <= 14:    # ≤14°F / -10°C → High
+            faucet_risk = "high"
+        elif min_temp_f <= 23:    # ≤23°F / -5°C → Moderate
+            faucet_risk = "moderate"
+        elif min_temp_f <= 32:    # ≤32°F / 0°C → Watch
+            faucet_risk = "watch"
+
+    # --- Air Vent Deflector 冷暖需求信号 ---
+    # 高温需求: ≥90°F / 32°C
+    # 低温需求: ≤45°F / 7°C → Watch | ≤32°F / 0°C → Strong
+    vent_heat = max_temp_f >= 90 if max_temp_f is not None else False
+    vent_cold_tier = "none"
+    if min_temp_f is not None:
+        if min_temp_f <= 32:
+            vent_cold_tier = "strong"   # ≤32°F / 0°C
+        elif min_temp_f <= 45:
+            vent_cold_tier = "watch"    # ≤45°F / 7°C
 
     return {
         "name": city["name"],
@@ -151,9 +179,12 @@ def get_city_7day_data(city):
         "region": city["region"],
         "min_f": min_temp_f,
         "max_f": max_temp_f,
-        "min_c": celsius(min_temp_f),
-        "max_c": celsius(max_temp_f),
+        "min_c": min_temp_c,
+        "max_c": max_temp_c,
         "periods": periods,
+        "faucet_risk": faucet_risk,
+        "vent_heat": vent_heat,
+        "vent_cold": vent_cold_tier,
     }
 
 
@@ -166,48 +197,106 @@ def get_nws_alerts_for_cities():
 # ==================== 各模块函数 ====================
 
 def build_executive_summary(all_city_data, alerts):
-    """1. Executive Summary - 冬季补货风险等级"""
+    """1. Executive Summary - 分别评估两个产品线"""
     lines = []
     lines.append("=" * 60)
-    lines.append("📊 Executive Summary - 冬季补货风险评估")
+    lines.append("📊 Executive Summary - 双产品线风险评估")
     lines.append("=" * 60)
     lines.append("")
 
-    cold_cities = [c for c in all_city_data if c["min_c"] and c["min_c"] <= COLD_THRESHOLD_C]
-    hot_cities = [c for c in all_city_data if c["max_c"] and c["max_c"] >= HOT_THRESHOLD_C]
-    severe_alerts = [a for a in alerts if a["severity"] in ("Extreme", "Severe")]
-    moderate_alerts = [a for a in alerts if a["severity"] == "Moderate"]
+    # ---- Outdoor Faucet Cover ----
+    faucet_critical = [c for c in all_city_data if c.get("faucet_risk") == "critical"]
+    faucet_high = [c for c in all_city_data if c.get("faucet_risk") == "high"]
+    faucet_moderate = [c for c in all_city_data if c.get("faucet_risk") == "moderate"]
+    faucet_watch = [c for c in all_city_data if c.get("faucet_risk") == "watch"]
 
-    if severe_alerts or len(cold_cities) >= 3:
-        risk_level = "🔴 HIGH - 立即启动补货"
-        risk_desc = "多处极端天气预警，建议立即安排生产"
-    elif moderate_alerts or len(cold_cities) >= 1:
-        risk_level = "🟡 MEDIUM - 密切监控"
-        risk_desc = "有预警信号，建议准备补货计划"
-    elif cold_cities or hot_cities:
-        risk_level = "🟢 LOW - 正常监控"
-        risk_desc = "暂无极端预警，按正常节奏备货"
+    FAUCET_COLD_ALERTS = {
+        "Freeze Warning", "Hard Freeze Warning", "Winter Storm Warning",
+        "Winter Storm Watch", "Ice Storm Warning", "Wind Chill Warning",
+        "Extreme Cold Warning", "Frost Advisory", "Freeze Watch",
+        "Wind Chill Advisory", "Heavy Snow Warning", "Blizzard Warning",
+    }
+    faucet_alerts = [a for a in alerts if a["event"] in FAUCET_COLD_ALERTS]
+    faucet_severe = [a for a in faucet_alerts if a["severity"] in ("Extreme", "Severe")]
+
+    if faucet_critical or len(faucet_severe) >= 2:
+        faucet_level = "🔴 CRITICAL - 爆单风险，立即补货"
+        faucet_desc = "多城市≤5°F(-15°C)，强烈建议立即生产补货"
+    elif faucet_high or len(faucet_severe) >= 1:
+        faucet_level = "🔴 HIGH - 核心补货预警"
+        faucet_desc = "多城市≤14°F(-10°C)，建议立即安排生产"
+    elif faucet_moderate:
+        faucet_level = "🟡 MEDIUM - 中等风险"
+        faucet_desc = "多城市≤23°F(-5°C)，建议准备补货计划"
+    elif faucet_watch:
+        faucet_level = "🟢 LOW - 低温关注"
+        faucet_desc = "多城市≤32°F(0°C)，正常监控"
     else:
-        risk_level = "🟢 LOW - 正常监控"
-        risk_desc = "各城市温度正常，无需特殊准备"
+        faucet_level = "🟢 LOW - 正常"
+        faucet_desc = "暂无冰冻风险信号"
 
-    lines.append(f"当前风险等级: {risk_level}")
-    lines.append(f"风险说明: {risk_desc}")
+    lines.append("【Outdoor Faucet Cover – 冬季冻裂风险】")
+    lines.append(f"  风险等级: {faucet_level}")
+    lines.append(f"  说明: {faucet_desc}")
+    if faucet_critical:
+        lines.append(f"  Critical 城市(≤5°F/-15°C): {', '.join([c['name'] for c in faucet_critical])}")
+    if faucet_high:
+        lines.append(f"  高风险城市(≤14°F/-10°C): {', '.join([c['name'] for c in faucet_high])}")
+    if faucet_moderate:
+        lines.append(f"  中等风险城市(≤23°F/-5°C): {', '.join([c['name'] for c in faucet_moderate])}")
+    if faucet_watch:
+        lines.append(f"  低温关注城市(≤32°F/0°C): {', '.join([c['name'] for c in faucet_watch])}")
+    if faucet_severe:
+        lines.append(f"  严重/极端冻害预警: {len(faucet_severe)} 条")
+    if not any([faucet_critical, faucet_high, faucet_moderate, faucet_watch, faucet_severe]):
+        lines.append("  ✅ 未来 7 天各城市暂无冰冻预警")
     lines.append("")
 
-    if cold_cities:
-        lines.append(f"⚠️ 极寒城市（<{COLD_THRESHOLD_C}°C）: {', '.join([c['name'] for c in cold_cities])}")
-    if hot_cities:
-        lines.append(f"⚠️ 极热城市（>{HOT_THRESHOLD_C}°C）: {', '.join([c['name'] for c in hot_cities])}")
-    if severe_alerts:
-        lines.append(f"🚨 严重预警: {len(severe_alerts)} 条")
-    if moderate_alerts:
-        lines.append(f"⚠️ 中等预警: {len(moderate_alerts)} 条")
+    # ---- Air Vent Deflector ----
+    vent_heat_cities = [c for c in all_city_data if c.get("vent_heat")]
+    vent_cold_strong = [c for c in all_city_data if c.get("vent_cold") == "strong"]
+    vent_cold_watch = [c for c in all_city_data if c.get("vent_cold") == "watch"]
 
-    if not cold_cities and not hot_cities and not severe_alerts and not moderate_alerts:
-        lines.append("✅ 未来 7 天各城市暂无极端温度预警")
+    VENT_HEAT_ALERTS = {"Heat Advisory", "Excessive Heat Warning", "Heat Wave", "Excessive Heat Watch"}
+    VENT_COLD_ALERTS = {"Cold Wave", "Winter Storm Warning", "Winter Storm Watch",
+                        "Extreme Cold Warning", "Wind Chill Warning", "Hard Freeze Warning"}
+    vent_heat_alerts = [a for a in alerts if a["event"] in VENT_HEAT_ALERTS]
+    vent_cold_alerts = [a for a in alerts if a["event"] in VENT_COLD_ALERTS]
+    vent_all_relevant = vent_heat_alerts + vent_cold_alerts
 
+    if vent_heat_cities or vent_heat_alerts:
+        vent_level = "🟠 HIGH - 夏季空调需求旺盛"
+        vent_desc = "多城市≥90°F(32°C)高温，空调/导风罩需求上升"
+    elif vent_cold_strong or vent_cold_alerts:
+        vent_level = "🟠 HIGH - 冬季采暖需求旺盛"
+        vent_desc = "多城市≤32°F(0°C)，HVAC 强采暖需求，导风罩需求上升"
+    elif vent_cold_watch:
+        vent_level = "🟡 MODERATE - 冬季采暖需求初现"
+        vent_desc = "多城市≤45°F(7°C)，HVAC 采暖开始使用，需求温和上升"
+    elif any(c.get("vent_heat") or c.get("vent_cold") not in ("none", False) for c in all_city_data):
+        vent_level = "🟡 MODERATE - 温和气候需求"
+        vent_desc = "温差适中，HVAC 需求一般"
+    else:
+        vent_level = "🟢 LOW - 正常"
+        vent_desc = "暂无强烈 HVAC 需求信号"
+
+    lines.append("【Air Vent Deflector – HVAC 冷暖需求信号】")
+    lines.append(f"  需求等级: {vent_level}")
+    lines.append(f"  说明: {vent_desc}")
+    if vent_heat_cities:
+        lines.append(f"  🔥 高温城市(≥90°F/32°C): {', '.join([c['name'] for c in vent_heat_cities])}")
+    if vent_cold_strong:
+        lines.append(f"  ❄️ 强采暖城市(≤32°F/0°C): {', '.join([c['name'] for c in vent_cold_strong])}")
+    if vent_cold_watch:
+        lines.append(f"  ⚠️ 采暖 Watch 城市(≤45°F/7°C): {', '.join([c['name'] for c in vent_cold_watch])}")
+    if vent_heat_alerts:
+        lines.append(f"  高温预警: {len(vent_heat_alerts)} 条")
+    if vent_cold_alerts:
+        lines.append(f"  低温/寒潮预警: {len(vent_cold_alerts)} 条")
+    if not vent_heat_cities and not vent_cold_strong and not vent_cold_watch and not vent_all_relevant:
+        lines.append("  ✅ 暂无强烈 HVAC 需求信号")
     lines.append("")
+
     lines.append(f"数据来源: NWS API (api.weather.gov)")
     lines.append(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')} 北京时间")
 
@@ -335,6 +424,135 @@ def build_14day_weather_risk():
     return "\n".join(lines)
 
 
+def build_faucet_cover_risk(all_city_data, alerts):
+    """2. Outdoor Faucet Cover – Winter Freeze Risk Detail"""
+    FAUCET_COLD_ALERTS = {
+        "Freeze Warning", "Hard Freeze Warning", "Winter Storm Warning",
+        "Winter Storm Watch", "Ice Storm Warning", "Wind Chill Warning",
+        "Extreme Cold Warning", "Frost Advisory", "Freeze Watch",
+        "Wind Chill Advisory", "Heavy Snow Warning", "Blizzard Warning",
+    }
+    lines = []
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("❄️ Outdoor Faucet Cover – Winter Freeze Risk")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append("产品用途: 冬季户外水龙头保暖罩，防止冻裂")
+    lines.append("核心阈值: ≤14°F/-10°C 触发补货 | ≤5°F/-15°C 爆单风险")
+    lines.append("⚠️ 高温预警不适用于本产品")
+    lines.append("")
+
+    faucet_cities_critical = [c for c in all_city_data if c.get("faucet_risk") == "critical"]
+    faucet_cities_high = [c for c in all_city_data if c.get("faucet_risk") == "high"]
+    faucet_cities_moderate = [c for c in all_city_data if c.get("faucet_risk") == "moderate"]
+    faucet_cities_watch = [c for c in all_city_data if c.get("faucet_risk") == "watch"]
+    faucet_alerts = [a for a in alerts if a["event"] in FAUCET_COLD_ALERTS]
+    faucet_severe = [a for a in faucet_alerts if a["severity"] in ("Extreme", "Severe")]
+    faucet_moderate_a = [a for a in faucet_alerts if a["severity"] == "Moderate"]
+
+    if faucet_cities_critical:
+        lines.append("🚨 CRITICAL – 爆单风险城市:")
+        for c in faucet_cities_critical:
+            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+        lines.append("")
+
+    if faucet_cities_high:
+        lines.append("🔴 HIGH – 核心补货风险城市:")
+        for c in faucet_cities_high:
+            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+        lines.append("")
+
+    if faucet_cities_moderate:
+        lines.append("🟡 MODERATE – 中等风险城市:")
+        for c in faucet_cities_moderate:
+            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+        lines.append("")
+
+    if faucet_cities_watch:
+        lines.append("🟢 WATCH – 低温关注城市:")
+        for c in faucet_cities_watch:
+            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+        lines.append("")
+
+    if faucet_alerts:
+        lines.append("📢 相关 NWS 预警:")
+        for a in faucet_alerts[:8]:
+            sev_cn = {"Extreme": "极端", "Severe": "严重", "Moderate": "中等"}.get(a["severity"], a["severity"])
+            lines.append(f"  • [{sev_cn}] {a['event']} - {a['state']}")
+        lines.append("")
+    else:
+        lines.append("📢 NWS 冻害预警: 暂无\n")
+
+    lines.append("数据来源: NWS API (api.weather.gov)")
+    return "\n".join(lines)
+
+
+def build_vent_deflector_signal(all_city_data, alerts):
+    """3. Air Vent Deflector – HVAC Demand Signal Detail"""
+    VENT_HEAT_ALERTS = {"Heat Advisory", "Excessive Heat Warning", "Heat Wave", "Excessive Heat Watch"}
+    VENT_COLD_ALERTS = {"Cold Wave", "Winter Storm Warning", "Winter Storm Watch",
+                        "Extreme Cold Warning", "Wind Chill Warning", "Hard Freeze Warning"}
+    lines = []
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("🔥 Air Vent Deflector – HVAC Demand Signal")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append("产品用途: 空调/暖气温控通风导流罩")
+    lines.append("需求信号: 高温(冷气需求) + 低温(暖气需求)")
+    lines.append("低温分级: ≤45°F/7°C → Watch | ≤32°F/0°C → Strong | Winter Storm/Cold Wave 等 → 寒潮信号")
+    lines.append("⚠️ 冷气和暖气需求都计入 HVAC 需求")
+    lines.append("")
+
+    vent_heat_cities = [c for c in all_city_data if c.get("vent_heat")]
+    vent_cold_strong = [c for c in all_city_data if c.get("vent_cold") == "strong"]
+    vent_cold_watch = [c for c in all_city_data if c.get("vent_cold") == "watch"]
+    vent_heat_alerts = [a for a in alerts if a["event"] in VENT_HEAT_ALERTS]
+    vent_cold_alerts = [a for a in alerts if a["event"] in VENT_COLD_ALERTS]
+
+    if vent_heat_cities:
+        lines.append("🔥 高温需求城市 (≥90°F/32°C) – 冷气市场:")
+        for c in vent_heat_cities:
+            lines.append(f"  • {c['name']}({c['state']}): 最高 {c['max_f']}°F ({c['max_c']}°C)")
+        lines.append("")
+
+    if vent_cold_strong:
+        lines.append("❄️ 强采暖需求城市 (≤32°F/0°C):")
+        for c in vent_cold_strong:
+            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+        lines.append("")
+
+    if vent_cold_watch:
+        lines.append("⚠️ 采暖 Watch 城市 (≤45°F/7°C):")
+        for c in vent_cold_watch:
+            lines.append(f"  • {c['name']}({c['state']}): 最低 {c['min_f']}°F ({c['min_c']}°C)")
+        lines.append("")
+
+    if not vent_heat_cities and not vent_cold_strong and not vent_cold_watch:
+        lines.append("🟢 暂无强烈 HVAC 需求城市")
+        lines.append("")
+
+    if vent_heat_alerts:
+        lines.append("📢 相关高温预警:")
+        for a in vent_heat_alerts[:5]:
+            lines.append(f"  • {a['event']} - {a['state']}")
+        lines.append("")
+
+    if vent_cold_alerts:
+        lines.append("📢 寒潮/低温预警 (Winter Storm/Cold Wave/Wind Chill 等):")
+        for a in vent_cold_alerts[:5]:
+            lines.append(f"  • {a['event']} - {a['state']}")
+        lines.append("")
+
+    if not vent_heat_alerts and not vent_cold_alerts:
+        lines.append("📢 NWS HVAC 相关预警: 暂无")
+        lines.append("")
+
+    lines.append("数据来源: NWS API (api.weather.gov)")
+    return "\n".join(lines)
+
+
 def build_7day_alerts(alerts):
     """6. 7-Day Official Alerts - NWS API 活跃预警"""
     lines = []
@@ -398,14 +616,20 @@ def build_7day_alerts(alerts):
 
 
 def build_7day_forecast(all_city_data):
-    """7. Daily Weather Forecast - 各城市 7 天预报"""
+    """7. Daily Weather Forecast - 各城市 7 天预报（含产品需求标记）"""
     lines = []
     lines.append("")
     lines.append("=" * 60)
-    lines.append("📍 7-Day Daily Weather Forecast")
+    lines.append("📍 7-Day City Weather Forecast (with Product Signals)")
     lines.append("=" * 60)
     lines.append("")
-    lines.append("数据来源: NWS API (api.weather.gov)")
+    lines.append("产品信号说明:")
+    lines.append("  ❄️ [Faucet Critical] ≤5°F/-15°C — Faucet Cover 爆单风险")
+    lines.append("  ❄️ [Faucet HIGH] ≤14°F/-10°C — Faucet Cover 核心补货")
+    lines.append("  ⚠️ [Faucet Watch] ≤32°F/0°C — Faucet Cover 低温关注")
+    lines.append("  🔥 [Vent Heat] ≥90°F/32°C — Vent Deflector 高温需求")
+    lines.append("  ❄️ [Vent Cold Strong] ≤32°F/0°C — Vent Deflector 强采暖需求")
+    lines.append("  ⚠️ [Vent Cold Watch] ≤45°F/7°C — Vent Deflector 采暖 Watch")
     lines.append("")
 
     regions = {}
@@ -415,8 +639,12 @@ def build_7day_forecast(all_city_data):
             regions[region] = []
         regions[region].append(city)
 
-    cold_cities = []
-    hot_cities = []
+    faucet_critical_cities = []
+    faucet_high_cities = []
+    faucet_watch_cities = []
+    vent_heat_cities = []
+    vent_cold_strong_cities = []
+    vent_cold_watch_cities = []
 
     for region in sorted(regions.keys()):
         cities = regions[region]
@@ -427,74 +655,175 @@ def build_7day_forecast(all_city_data):
             min_f = c["min_f"]
             max_f = c["max_f"]
 
-            flag = ""
-            if min_c and min_c <= COLD_THRESHOLD_C:
-                flag = " ❄️ 极寒"
-                cold_cities.append(c["name"])
-            elif max_c and max_c >= HOT_THRESHOLD_C:
-                flag = " 🔥 极热"
-                hot_cities.append(c["name"])
+            tags = []
+            risk = c.get("faucet_risk", "none")
+            if risk == "critical":
+                tags.append("❄️ [Faucet Critical]")
+                faucet_critical_cities.append(c["name"])
+            elif risk == "high":
+                tags.append("❄️ [Faucet HIGH]")
+                faucet_high_cities.append(c["name"])
+            elif risk == "moderate":
+                tags.append("⚠️ [Faucet Mod]")
+            elif risk == "watch":
+                tags.append("⚠️ [Faucet Watch]")
+                faucet_watch_cities.append(c["name"])
 
-            lines.append(f"  • {c['name']}({c['state']}): {min_c}°C ~ {max_c}°C ({min_f}°F ~ {max_f}°F){flag}")
+            if c.get("vent_heat"):
+                tags.append("🔥 [Vent Heat]")
+                vent_heat_cities.append(c["name"])
+            vent_cold_tier = c.get("vent_cold", "none")
+            if vent_cold_tier == "strong":
+                tags.append("❄️ [Vent Cold Strong]")
+                vent_cold_strong_cities.append(c["name"])
+            elif vent_cold_tier == "watch":
+                tags.append("⚠️ [Vent Cold Watch]")
+                vent_cold_watch_cities.append(c["name"])
+
+            flag_str = " ".join(tags) if tags else ""
+            lines.append(f"  • {c['name']}({c['state']}): {min_c}°C ~ {max_c}°C ({min_f}°F ~ {max_f}°F) {flag_str}")
         lines.append("")
 
+    # Summary by product
     lines.append("-" * 40)
-    lines.append("📊 极寒/极热城市汇总:")
-    if cold_cities:
-        lines.append(f"  ❄️ 极寒（<{COLD_THRESHOLD_C}°C）: {', '.join(cold_cities)}")
-    if hot_cities:
-        lines.append(f"  🔥 极热（>{HOT_THRESHOLD_C}°C）: {', '.join(hot_cities)}")
-    if not cold_cities and not hot_cities:
-        lines.append("  ✅ 暂无城市达到极寒/极热阈值")
+    lines.append("📊 Outdoor Faucet Cover 温度风险汇总:")
+    if faucet_critical_cities:
+        lines.append(f"  ❄️ Critical (≤5°F/-15°C): {', '.join(faucet_critical_cities)}")
+    if faucet_high_cities:
+        lines.append(f"  ❄️ HIGH (≤14°F/-10°C): {', '.join(faucet_high_cities)}")
+    if faucet_watch_cities:
+        lines.append(f"  ⚠️ Watch (≤32°F/0°C): {', '.join(faucet_watch_cities)}")
+    if not faucet_critical_cities and not faucet_high_cities and not faucet_watch_cities:
+        lines.append("  🟢 暂无冰冻风险城市")
+
+    lines.append("")
+    lines.append("📊 Air Vent Deflector HVAC 需求汇总:")
+    if vent_heat_cities:
+        lines.append(f"  🔥 高温需求 (≥90°F/32°C): {', '.join(vent_heat_cities)}")
+    if vent_cold_strong_cities:
+        lines.append(f"  ❄️ 强采暖需求 (≤32°F/0°C): {', '.join(vent_cold_strong_cities)}")
+    if vent_cold_watch_cities:
+        lines.append(f"  ⚠️ 采暖 Watch (≤45°F/7°C): {', '.join(vent_cold_watch_cities)}")
+    if not vent_heat_cities and not vent_cold_strong_cities and not vent_cold_watch_cities:
+        lines.append("  🟢 暂无强烈 HVAC 需求城市")
 
     return "\n".join(lines)
 
 
 def build_amazon_actions(all_city_data, alerts):
-    """8. Suggested Amazon Actions - 行动建议"""
+    """10. Suggested Amazon Actions - 双产品行动建议"""
     lines = []
     lines.append("")
     lines.append("=" * 60)
-    lines.append("🛒 Suggested Amazon Actions")
+    lines.append("🛒 Suggested Amazon Actions (Dual Product)")
     lines.append("=" * 60)
     lines.append("")
 
-    cold_cities = [c for c in all_city_data if c["min_c"] and c["min_c"] <= COLD_THRESHOLD_C]
-    hot_cities = [c for c in all_city_data if c["max_c"] and c["max_c"] >= HOT_THRESHOLD_C]
-    severe_alerts = [a for a in alerts if a["severity"] in ("Extreme", "Severe")]
+    # ---- Outdoor Faucet Cover ----
+    FAUCET_COLD_ALERTS = {
+        "Freeze Warning", "Hard Freeze Warning", "Winter Storm Warning",
+        "Winter Storm Watch", "Ice Storm Warning", "Wind Chill Warning",
+        "Extreme Cold Warning", "Frost Advisory", "Freeze Watch",
+        "Wind Chill Advisory", "Heavy Snow Warning", "Blizzard Warning",
+    }
+    faucet_cold_alerts = [a for a in alerts if a["event"] in FAUCET_COLD_ALERTS]
+    faucet_severe = [a for a in faucet_cold_alerts if a["severity"] in ("Extreme", "Severe")]
+    faucet_critical = [c for c in all_city_data if c.get("faucet_risk") == "critical"]
+    faucet_high = [c for c in all_city_data if c.get("faucet_risk") == "high"]
 
-    risk_level = "HIGH" if (severe_alerts or len(cold_cities) >= 3) else \
-                 "MEDIUM" if (cold_cities or severe_alerts) else "LOW"
-
-    lines.append(f"当前风险等级: {risk_level}")
-    lines.append("")
-
-    lines.append("📋 建议操作:")
-
-    if risk_level == "HIGH":
-        lines.append("  1. ✅ 立即启动生产 - 多处极寒预警")
-        lines.append("  2. ✅ 立即安排海运/FBA发货")
-        lines.append("  3. ✅ 提高 Amazon 广告预算 +50%~100%")
-        lines.append("  4. ✅ 考虑提高 coupon 力度促销")
-        lines.append("  5. ✅ 优化关键词: outdoor faucet cover, freeze protection, faucet freeze protector")
-    elif risk_level == "MEDIUM":
-        lines.append("  1. ⚠️ 准备启动生产 - 有极寒信号")
-        lines.append("  2. ⚠️ 准备海运/FBA安排")
-        lines.append("  3. ⚠️ 适度提高广告预算 +20%~30%")
-        lines.append("  4. ⚠️ 观察 3-5 天再决定")
+    if faucet_critical or len(faucet_severe) >= 2:
+        f_risk = "CRITICAL"
+    elif faucet_high or len(faucet_severe) >= 1:
+        f_risk = "HIGH"
+    elif [c for c in all_city_data if c.get("faucet_risk") in ("moderate", "watch")]:
+        f_risk = "MEDIUM"
     else:
-        lines.append("  1. ℹ️ 按正常节奏备货")
-        lines.append("  2. ℹ️ 维持正常广告预算")
-        lines.append("  3. ℹ️ 持续监控天气变化")
+        f_risk = "LOW"
 
+    lines.append("【Outdoor Faucet Cover】")
+    lines.append(f"  风险等级: {f_risk}")
+    lines.append("  📋 建议操作:")
+
+    if f_risk == "CRITICAL":
+        lines.append("    ✅ 立即启动生产（爆单风险）")
+        lines.append("    ✅ 立即安排海运/FBA 加急")
+        lines.append("    ✅ 广告预算提高到 +100%")
+        lines.append("    ✅ Coupon 力度最大化")
+        lines.append("    ✅ 备货量按 3 倍日常量安排")
+    elif f_risk == "HIGH":
+        lines.append("    ✅ 立即启动生产")
+        lines.append("    ✅ 立即安排海运/FBA")
+        lines.append("    ✅ 广告预算提高 +50%~100%")
+        lines.append("    ✅ Coupon 力度提高")
+        lines.append("    ✅ 备货量按 2 倍日常量安排")
+    elif f_risk == "MEDIUM":
+        lines.append("    ⚠️ 准备启动生产")
+        lines.append("    ⚠️ 准备海运/FBA安排")
+        lines.append("    ⚠️ 广告预算提高 +20%~30%")
+        lines.append("    ⚠️ 观察 3-5 天再决定")
+    else:
+        lines.append("    ℹ️ 按正常节奏备货")
+        lines.append("    ℹ️ 维持正常广告预算")
+
+    lines.append("  🎯 Faucet Cover 关键词:")
+    lines.append("    • outdoor faucet cover")
+    lines.append("    • freeze protection")
+    lines.append("    • faucet freeze protector")
+    lines.append("    • winter faucet cover")
+    lines.append("    • pipe freeze protection")
     lines.append("")
-    lines.append("🎯 关键词优化建议:")
-    lines.append("  • outdoor faucet cover")
-    lines.append("  • freeze protection")
-    lines.append("  • faucet freeze protector")
-    lines.append("  • winter faucet cover")
-    lines.append("  • pipe freeze protection")
+
+    # ---- Air Vent Deflector ----
+    vent_heat_cities = [c for c in all_city_data if c.get("vent_heat")]
+    vent_cold_strong = [c for c in all_city_data if c.get("vent_cold") == "strong"]
+    vent_cold_watch = [c for c in all_city_data if c.get("vent_cold") == "watch"]
+
+    VENT_HEAT_ALERTS = {"Heat Advisory", "Excessive Heat Warning", "Heat Wave", "Excessive Heat Watch"}
+    VENT_COLD_ALERTS = {"Cold Wave", "Winter Storm Warning", "Winter Storm Watch",
+                        "Extreme Cold Warning", "Wind Chill Warning", "Hard Freeze Warning"}
+    vent_heat_alerts = [a for a in alerts if a["event"] in VENT_HEAT_ALERTS]
+    vent_cold_alerts = [a for a in alerts if a["event"] in VENT_COLD_ALERTS]
+
+    if vent_heat_cities or vent_heat_alerts:
+        v_risk = "HIGH (Heat)"
+    elif vent_cold_strong or vent_cold_alerts:
+        v_risk = "HIGH (Cold)"
+    elif vent_cold_watch:
+        v_risk = "MODERATE (Cold Watch)"
+    elif any(c.get("vent_heat") or c.get("vent_cold") not in ("none", False) for c in all_city_data):
+        v_risk = "MODERATE"
+    else:
+        v_risk = "LOW"
+
+    lines.append("【Air Vent Deflector – HVAC 需求】")
+    lines.append(f"  需求等级: {v_risk}")
+    lines.append("  📋 建议操作:")
+
+    if "HIGH" in v_risk:
+        lines.append("    ✅ 广告预算提高 +50%~100%（HVAC 需求旺盛）")
+        lines.append("    ✅ 主图/文案突出'冷气导流'或'采暖节能'场景")
+        lines.append("    ✅ 考虑增加 coupon 吸引点击")
+        lines.append("    ✅ 优化以下关键词:")
+    elif v_risk == "MODERATE":
+        lines.append("    ⚠️ 广告预算适度提高 +20%~30%")
+        lines.append("    ⚠️ 观察天气变化趋势")
+    else:
+        lines.append("    ℹ️ 维持正常广告预算")
+        lines.append("    ℹ️ 持续监控天气变化")
+
+    lines.append("  🎯 Vent Deflector 夏季关键词:")
+    lines.append("    • air vent deflector")
+    lines.append("    • ac vent cover")
+    lines.append("    • hvac vent cover")
+    lines.append("    • return air vent cover")
+    lines.append("    • vent cover for winter")
+    lines.append("  🎯 Vent Deflector 冬季关键词:")
+    lines.append("    • furnace vent cover")
+    lines.append("    • heating vent deflector")
+    lines.append("    • hot air vent cover")
+    lines.append("    • dryer vent cover")
     lines.append("")
+
     lines.append("⚠️ 注意: 建议基于 NWS 7 天预报数据，实际决策请结合市场情况")
 
     return "\n".join(lines)
@@ -509,12 +838,14 @@ def format_full_email(all_city_data, alerts):
     parts.append("=" * 60)
 
     parts.append(build_executive_summary(all_city_data, alerts))
+    parts.append(build_faucet_cover_risk(all_city_data, alerts))
+    parts.append(build_vent_deflector_signal(all_city_data, alerts))
+    parts.append(build_7day_alerts(alerts))
+    parts.append(build_7day_forecast(all_city_data))
     parts.append(build_50day_replenishment_risk())
     parts.append(build_45day_shipping_decision())
     parts.append(build_30day_market_watch())
     parts.append(build_14day_weather_risk())
-    parts.append(build_7day_alerts(alerts))
-    parts.append(build_7day_forecast(all_city_data))
     parts.append(build_amazon_actions(all_city_data, alerts))
 
     parts.append("")
@@ -548,7 +879,7 @@ def send_email(message):
         return False
 
     msg = MIMEText(message, "plain", "utf-8")
-    msg["Subject"] = "🏭 50天冬季备货预警"
+    msg["Subject"] = "🏭 双产品线天气预警与备货建议"
     msg["From"] = sender
     msg["To"] = receiver
 
