@@ -77,8 +77,29 @@ def get_heat_duration(periods):
     if not periods:
         return None
 
-    # 调试：打印第一个 period 的所有 key
-    print(f"  [DEBUG] periods count: {len(periods)}, keys sample: {list(periods[0].keys()) if periods else 'empty'}")
+    # 按日历天分组，取每天的最高温
+    daily_max = {}
+    for p in periods:
+        start = p.get("startTime", "")
+        if not start:
+            continue
+        day = start[:10]
+        temp = p.get("temperature")
+        if temp is None:
+            continue
+        if day not in daily_max or temp > daily_max[day]:
+            daily_max[day] = temp
+
+    print(f"  [DEBUG] daily_max: {daily_max}")
+
+    if not daily_max:
+        return None
+
+    hot_days = sorted([day for day, temp in daily_max.items() if temp >= 90])
+    print(f"  [DEBUG] hot_days (≥90°F): {hot_days}")
+
+    if not hot_days:
+        return None
 
     # 按日历天分组，取每天的最高温
     daily_max = {}
@@ -135,12 +156,14 @@ def get_heat_duration(periods):
     end_dt = datetime.strptime(best_end, "%Y-%m-%d")
     start_dt = end_dt - timedelta(days=max_consecutive - 1)
 
-    return {
+    result = {
         "days": max_consecutive,
         "start_date": start_dt.strftime("%Y-%m-%d"),
         "end_date": best_end,
         "peak_temp_f": max(temp for day, temp in daily_max.items() if day >= best_start and day <= best_end),
     }
+    print(f"  [DEBUG] heat_duration result: {result}")
+    return result
 
 
 def format_temp_period(city_data, period_key):
@@ -188,6 +211,7 @@ def format_heat_city(city_data):
     peak = city_data.get("peak_heat_period")
     max_f = city_data.get("max_f")
     max_c = city_data.get("max_c")
+    print(f"  [DEBUG format_heat_city] city={city_data['name']}, dur={dur}, peak={peak is not None}")
 
     lines = []
     lines.append(f"{city_data['name']}, {city_data['state']}")
