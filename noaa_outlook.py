@@ -72,6 +72,74 @@ def celsius(f):
     return round((f - 32) * 5 / 9)
 
 
+def get_heat_duration(periods):
+    """计算高温持续天数（连续多少天日最高温 ≥ 90°F / 32°C）"""
+    if not periods:
+        return None
+
+    # 按日历天分组，取每天的最高温
+    daily_max = {}
+    for p in periods:
+        start = p.get("startTime", "")
+        if not start:
+            continue
+        # 取 YYYY-MM-DD 部分
+        day = start[:10]
+        temp = p.get("temperature")
+        if temp is None:
+            continue
+        if day not in daily_max or temp > daily_max[day]:
+            daily_max[day] = temp
+
+    if not daily_max:
+        return None
+
+    # 找出连续多少天 ≥ 90°F
+    hot_days = sorted([day for day, temp in daily_max.items() if temp >= 90])
+    if not hot_days:
+        return None
+
+    # 计算连续天数
+    max_consecutive = 1
+    current_streak = 1
+    current_start = hot_days[0]
+    best_start = hot_days[0]
+    best_end = hot_days[0]
+
+    prev_day = hot_days[0]
+    for day in hot_days[1:]:
+        from datetime import datetime, timedelta
+        prev_dt = datetime.strptime(prev_day, "%Y-%m-%d")
+        curr_dt = datetime.strptime(day, "%Y-%m-%d")
+        if (curr_dt - prev_dt).days == 1:
+            current_streak += 1
+        else:
+            if current_streak > max_consecutive:
+                max_consecutive = current_streak
+                best_start = current_start
+                best_end = prev_day
+            current_streak = 1
+            current_start = day
+        prev_day = day
+
+    if current_streak > max_consecutive:
+        max_consecutive = current_streak
+        best_start = current_start
+        best_end = day
+
+    # 计算起始日（连续段的第一天）
+    from datetime import datetime, timedelta
+    end_dt = datetime.strptime(best_end, "%Y-%m-%d")
+    start_dt = end_dt - timedelta(days=max_consecutive - 1)
+
+    return {
+        "days": max_consecutive,
+        "start_date": start_dt.strftime("%Y-%m-%d"),
+        "end_date": best_end,
+        "peak_temp_f": max(temp for day, temp in daily_max.items() if day >= best_start and day <= best_end),
+    }
+
+
 def format_temp_period(city_data, period_key):
     """格式化城市温度峰值发生的具体时间段信息"""
     p = city_data.get(period_key)
@@ -107,6 +175,41 @@ def format_temp_period(city_data, period_key):
     lines.append(f"  结束时间: {end}")
     if forecast:
         lines.append(f"  天气状况: {forecast}")
+    lines.append(f"  来源: NWS 7-Day Forecast")
+    return "\n".join(lines)
+
+
+def format_heat_city(city_data):
+    """格式化高温城市信息（包含持续天数）"""
+    dur = city_data.get("heat_duration")
+    peak = city_data.get("peak_heat_period")
+    max_f = city_data.get("max_f")
+    max_c = city_data.get("max_c")
+
+    lines = []
+    lines.append(f"{city_data['name']}, {city_data['state']}")
+
+    if dur:
+        lines.append(f"  最高温: {max_f}°F / {max_c}°C")
+        lines.append(f"  高温持续: {dur['days']} 天（{dur['start_date'][5:].replace('-', '/')} ~ {dur['end_date'][5:].replace('-', '/')}）")
+    elif peak:
+        temp = peak.get("temperature")
+        unit = peak.get("temperatureUnit", "F")
+        temp_str = f"{temp}°{unit}" if temp is not None else "N/A"
+        temp_c = celsius(temp) if temp is not None else "N/A"
+        temp_c_str = f"{temp_c}°C" if temp_c != "N/A" else ""
+        name = peak.get("name", "")
+        start = peak.get("startTime", "")[:16] if peak.get("startTime") else "暂无官方时间"
+        end = peak.get("endTime", "")[:16] if peak.get("endTime") else "暂无官方时间"
+        lines.append(f"  最高温: {temp_str} / {temp_c_str}")
+        lines.append(f"  预报时段: {name if name else '暂无官方时间'}")
+        lines.append(f"  开始时间: {start}")
+        lines.append(f"  结束时间: {end}")
+    else:
+        if max_f is not None:
+            lines.append(f"  最高温: {max_f}°F / {max_c}°C")
+        lines.append(f"  高温持续: 暂无官方时间")
+
     lines.append(f"  来源: NWS 7-Day Forecast")
     return "\n".join(lines)
 
@@ -214,6 +317,9 @@ def get_city_7day_data(city):
                 peak_cold_period = make_period_summary(p)
                 break
 
+    # 计算高温持续天数
+    heat_duration = get_heat_duration(periods) if vent_heat else None
+
     # --- Outdoor Faucet Cover 风险等级 ---
     # 14°F = -10°C: 核心补货预警 | 23°F = -5°C: 中等风险 | 32°F = 0°C: 低温关注
     faucet_risk = "none"
@@ -252,6 +358,7 @@ def get_city_7day_data(city):
         "vent_cold": vent_cold_tier,
         "peak_heat_period": peak_heat_period,
         "peak_cold_period": peak_cold_period,
+        "heat_duration": heat_duration,
     }
 
 
@@ -361,7 +468,7 @@ def build_executive_summary(all_city_data, alerts):
     if vent_heat_cities:
         lines.append("  🔥 高温城市(≥90°F/32°C):")
         for c in vent_heat_cities:
-            lines.append(format_temp_period(c, "peak_heat_period"))
+            lines.append(format_heat_city(c))
     if vent_cold_strong:
         lines.append("  ❄️ 强采暖城市(≤32°F/0°C):")
         for c in vent_cold_strong:
@@ -595,7 +702,7 @@ def build_vent_deflector_signal(all_city_data, alerts):
     if vent_heat_cities:
         lines.append("🔥 高温需求城市 (≥90°F/32°C) – 冷气市场:")
         for c in vent_heat_cities:
-            lines.append(format_temp_period(c, "peak_heat_period"))
+            lines.append(format_heat_city(c))
         lines.append("")
 
     if vent_cold_strong:
@@ -796,7 +903,7 @@ def build_7day_forecast(all_city_data):
         for name in vent_heat_cities:
             city = next((c for c in all_city_data if c["name"] == name), None)
             if city:
-                lines.append(format_temp_period(city, "peak_heat_period"))
+                lines.append(format_heat_city(city))
     if vent_cold_strong_cities:
         lines.append("  ❄️ 强采暖需求 (≤32°F/0°C):")
         for name in vent_cold_strong_cities:
