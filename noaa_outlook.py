@@ -77,6 +77,9 @@ def get_heat_duration(periods):
     if not periods:
         return None
 
+    # 调试：打印第一个 period 的所有 key
+    print(f"  [DEBUG] periods count: {len(periods)}, keys sample: {list(periods[0].keys()) if periods else 'empty'}")
+
     # 按日历天分组，取每天的最高温
     daily_max = {}
     for p in periods:
