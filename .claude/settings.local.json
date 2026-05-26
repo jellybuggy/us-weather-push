@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run *)",
+      "Bash(mkdir -p /d/claude/外贸项目追踪系统/data /d/claude/外贸项目追踪系统/templates)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh repo *)",
+      "WebFetch(domain:jellybuggy.github.io)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/d/claude/外贸项目追踪系统/app.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git branch *)",
+      "Bash(curl -s -X POST \"https://api.github.com/user/repos\" -H \"Authorization: token \")",
+      "Bash(curl -I https://github.com)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://jellybuggy.github.io/mold-tracker/ --max-time 10)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ],
+    "additionalDirectories": [
+      "D:\\claude\\外贸项目追踪系统"
+    ]
+  }
+}
