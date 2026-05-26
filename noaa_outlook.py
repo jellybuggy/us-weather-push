@@ -101,28 +101,6 @@ def get_heat_duration(periods):
     if not hot_days:
         return None
 
-    # 按日历天分组，取每天的最高温
-    daily_max = {}
-    for p in periods:
-        start = p.get("startTime", "")
-        if not start:
-            continue
-        # 取 YYYY-MM-DD 部分
-        day = start[:10]
-        temp = p.get("temperature")
-        if temp is None:
-            continue
-        if day not in daily_max or temp > daily_max[day]:
-            daily_max[day] = temp
-
-    if not daily_max:
-        return None
-
-    # 找出连续多少天 ≥ 90°F
-    hot_days = sorted([day for day, temp in daily_max.items() if temp >= 90])
-    if not hot_days:
-        return None
-
     # 计算连续天数
     max_consecutive = 1
     current_streak = 1
@@ -344,8 +322,8 @@ def get_city_7day_data(city):
                 peak_cold_period = make_period_summary(p)
                 break
 
-    # 计算高温持续天数
-    heat_duration = get_heat_duration(periods) if vent_heat else None
+    # 计算高温持续天数（无条件计算，由函数内部判断是否有高温天）
+    heat_duration = get_heat_duration(periods)
 
     # --- Outdoor Faucet Cover 风险等级 ---
     # 14°F = -10°C: 核心补货预警 | 23°F = -5°C: 中等风险 | 32°F = 0°C: 低温关注
