@@ -175,7 +175,7 @@ def format_temp_period(city_data, period_key):
     lines.append(f"  结束时间: {end}")
     if forecast:
         lines.append(f"  天气状况: {forecast}")
-    lines.append(f"  来源: NWS 7-Day Forecast")
+    lines.append(f"  来源: NWS API")
     return "\n".join(lines)
 
 
@@ -210,7 +210,7 @@ def format_heat_city(city_data):
             lines.append(f"  最高温: {max_f}°F / {max_c}°C")
         lines.append(f"  高温持续: 暂无官方时间")
 
-    lines.append(f"  来源: NWS 7-Day Forecast")
+    lines.append(f"  来源: NWS API")
     return "\n".join(lines)
 
 
