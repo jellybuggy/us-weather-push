@@ -31,11 +31,11 @@ SYSTEM_NAME = "Dual-Product Weather & Replenishment Alert System"
 
 # 极寒/极热阈值（摄氏）
 COLD_THRESHOLD_C = -10
-HOT_THRESHOLD_C = 32
+HOT_THRESHOLD_C = 28
 
 # 华氏阈值
 COLD_THRESHOLD_F = 14  # 14°F = -10°C
-HOT_THRESHOLD_F = 90   # 90°F = 32°C
+HOT_THRESHOLD_F = 82   # 82°F = 28°C（高温触发阈值）
 
 # 美国重点城市（覆盖主要销售区域）
 CITIES = [
@@ -73,7 +73,7 @@ def celsius(f):
 
 
 def get_heat_duration(periods):
-    """计算高温持续天数（连续多少天日最高温 ≥ 90°F / 32°C）"""
+    """计算高温持续天数（连续多少天日最高温 ≥ 82°F / 28°C）"""
     if not periods:
         return None
 
@@ -96,7 +96,7 @@ def get_heat_duration(periods):
         return None
 
     hot_days = sorted([day for day, temp in daily_max.items() if temp >= 90])
-    print(f"  [DEBUG] hot_days (≥90°F): {hot_days}")
+    print(f"  [DEBUG] hot_days (≥82°F/28°C): {hot_days}")
 
     if not hot_days:
         return None
@@ -341,7 +341,7 @@ def get_city_7day_data(city):
     # --- Air Vent Deflector 冷暖需求信号 ---
     # 高温需求: ≥90°F / 32°C
     # 低温需求: ≤45°F / 7°C → Watch | ≤32°F / 0°C → Strong
-    vent_heat = max_temp_f >= 90 if max_temp_f is not None else False
+    vent_heat = max_temp_f >= HOT_THRESHOLD_F if max_temp_f is not None else False
     vent_cold_tier = "none"
     if min_temp_f is not None:
         if min_temp_f <= 32:
@@ -453,7 +453,7 @@ def build_executive_summary(all_city_data, alerts):
 
     if vent_heat_cities or vent_heat_alerts:
         vent_level = "🟠 HIGH - 夏季空调需求旺盛"
-        vent_desc = "多城市≥90°F(32°C)高温，空调/导风罩需求上升"
+        vent_desc = f"多城市≥{HOT_THRESHOLD_F}°F({HOT_THRESHOLD_C}°C)高温，空调/导风罩需求上升"
     elif vent_cold_strong or vent_cold_alerts:
         vent_level = "🟠 HIGH - 冬季采暖需求旺盛"
         vent_desc = "多城市≤32°F(0°C)，HVAC 强采暖需求，导风罩需求上升"
